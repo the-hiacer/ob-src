@@ -1,4 +1,4 @@
-.\" $OpenBSD: tmux.1,v 1.777 2020/06/04 10:34:40 nicm Exp $
+.\" $OpenBSD: tmux.1,v 1.780 2020/06/10 07:27:10 nicm Exp $
 .\"
 .\" Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
 .\"
@@ -14,7 +14,7 @@
 .\" IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 .\" OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 .\"
-.Dd $Mdocdate: June 4 2020 $
+.Dd $Mdocdate: June 10 2020 $
 .Dt TMUX 1
 .Os
 .Sh NAME
@@ -977,14 +977,18 @@ detaching the client, typically causing it to exit.
 sets a comma-separated list of client flags.
 The flags are:
 .Bl -tag -width Ds
-.It read-only
-the client is read-only
+.It active-pane
+the client has an independent active pane
 .It ignore-size
 the client does not affect the size of other clients
 .It no-output
 the client does not receive pane output in control mode
-.It active-pane
-the client has an independent active pane
+.It pause-after=seconds
+output is paused once the pane is
+.Ar seconds
+behind in control mode
+.It read-only
+the client is read-only
 .El
 .Pp
 A leading
@@ -1295,22 +1299,27 @@ it.
 .Fl C
 sets the width and height of a control mode client.
 .Fl A
-informs
-.Nm
-of a control mode client's interest in a pane.
+allows a control mode client to trigger actions on a pane.
 The argument is a pane ID (with leading
 .Ql % ) ,
 a colon, then one of
-.Ql on
+.Ql on ,
+.Ql off
 or
-.Ql off .
+.Ql continue .
 If
 .Ql off ,
 .Nm
 will not send output from the pane to the client and if all clients have turned
 the pane off, will stop reading from the pane.
+If
+.Ql continue ,
+.Nm
+will return to sending output to a paused pane (see the
+.Ar pause-after
+flag).
 .Fl A
-may be given multiple times.
+may be given multiple times for different panes.
 .Pp
 .Fl f
 sets a comma-separated list of client flags, see
@@ -3345,6 +3354,10 @@ Allows setting the system clipboard.
 Allows setting the cursor colour.
 .It cstyle
 Allows setting the cursor style.
+.It extkeys
+Supports extended keys.
+.It focus
+Supports focus reporting.
 .It margins
 Supports DECSLRM margins.
 .It overline
@@ -3353,6 +3366,8 @@ Supports the overline SGR attribute.
 Supports the DECFRA rectangle fill escape sequence.
 .It RGB
 Supports RGB colour with the SGR escape sequences.
+.It strikethrough
+Supports the strikethrough SGR escape sequence.
 .It sync
 Supports synchronized updates.
 .It title
@@ -5712,29 +5727,32 @@ When a
 client detaches, it prints a message.
 This may be one of:
 .Bl -tag -width Ds
-.It [detached (from session ...)]
+.It detached (from session ...)
 The client was detached normally.
-.It [detached and SIGHUP]
+.It detached and SIGHUP
 The client was detached and its parent sent the
 .Dv SIGHUP
 signal (for example with
 .Ic detach-client
 .Fl P ) .
-.It [lost tty]
+.It lost tty
 The client's
 .Xr tty 4
 or
 .Xr pty 4
 was unexpectedly destroyed.
-.It [terminated]
+.It terminated
 The client was killed with
 .Dv SIGTERM .
-.It [exited]
+.It too far behind
+The client is in control mode and became unable to keep up with the data from
+.Nm .
+.It exited
 The server exited when it had no sessions.
-.It [server exited]
+.It server exited
 The server exited when it received
 .Dv SIGTERM .
-.It [server exited unexpectedly]
+.It server exited unexpectedly
 The server crashed or otherwise exited without telling the client the reason.
 .El
 .Sh TERMINFO EXTENSIONS
@@ -5881,6 +5899,12 @@ The client is now attached to the session with ID
 .Ar session-id ,
 which is named
 .Ar name .
+.It Ic %continue Ar pane-id
+The pane has been continued after being paused (if the
+.Ar pause-after
+flag is set, see
+.Ic refresh-client
+.Fl A ) .
 .It Ic %exit Op Ar reason
 The
 .Nm
@@ -5889,6 +5913,17 @@ or an error occurred.
 If present,
 .Ar reason
 describes why the client exited.
+.It Ic %extended-output Ar pane-id Ar age Ar ... : Ar value
+New form of
+.Ic %output
+sent when the
+.Ar pause-after
+flag is set.
+.Ar age
+is the time in milliseconds for which tmux had buffered the output before it was sent.
+Any subsequent arguments up until a single
+.Ql \&:
+are for future use and should be ignored.
 .It Ic %layout-change Ar window-id Ar window-layout Ar window-visible-layout Ar window-flags
 The layout of a window with ID
 .Ar window-id
@@ -5907,6 +5942,10 @@ escapes non-printable characters and backslash as octal \\xxx.
 The pane with ID
 .Ar pane-id
 has changed mode.
+.It Ic %pause Ar pane-id
+The pane has been paused (if the
+.Ar pause-after
+flag is set).
 .It Ic %session-changed Ar session-id Ar name
 The client is now attached to the session with ID
 .Ar session-id ,
